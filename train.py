@@ -119,6 +119,10 @@ def train():
             elif OPTIMIZER == 'adam':
                 optimizer = tf.train.AdamOptimizer(learning_rate)
             train_op = optimizer.minimize(loss, global_step=batch)
+            if FLAGS.model=="model_mk":
+                aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
+                aux_step = aux_optimizer.minimize(end_points["entropy_bottleneck"].losses[0])
+            step = tf.group(train_op, aux_step, end_points["entropy_bottleneck"].updates[0])
             
             # Add ops to save and restore all the variables.
             saver = tf.train.Saver()
@@ -184,7 +188,7 @@ def train_one_epoch(sess, ops, train_writer):
     # Shuffle train samples
     train_idxs = np.arange(0, len(TRAIN_DATASET))
     np.random.shuffle(train_idxs)
-    num_batches = len(TRAIN_DATASET)/BATCH_SIZE
+    num_batches = len(TRAIN_DATASET)//BATCH_SIZE
     
     log_string(str(datetime.now()))
 
@@ -223,7 +227,7 @@ def eval_one_epoch(sess, ops, test_writer):
     global EPOCH_CNT
     is_training = False
     test_idxs = np.arange(0, len(TEST_DATASET))
-    num_batches = len(TEST_DATASET)/BATCH_SIZE
+    num_batches = len(TEST_DATASET)//BATCH_SIZE
 
     log_string(str(datetime.now()))
     log_string('---- EPOCH %03d EVALUATION ----'%(EPOCH_CNT))

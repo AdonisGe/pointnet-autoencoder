@@ -5,12 +5,14 @@ Author: Charles R. Qi
 Date: May 2018
 """
 import tensorflow as tf
+import tensorflow_compression as tfc
 import numpy as np
 import math
 import sys
 import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
+sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import tf_util
 sys.path.append(os.path.join(ROOT_DIR, 'tf_ops/nn_distance'))
@@ -67,7 +69,7 @@ def get_model(point_cloud, is_training, bn_decay=None):
     end_points['embedding'] = net
 
     # Entropy bottleneck
-    entropy_bottleneck = EntropyBottleneck()
+    entropy_bottleneck = tfc.EntropyBottleneck()
     end_points['entropy_bottleneck'] = entropy_bottleneck
 
     net, likelihoods = entropy_bottleneck(net, training=True)
@@ -86,11 +88,11 @@ def get_loss(pred, label, end_points):
         label: BxNx3, """
     dists_forward, _, dists_backward, _ = tf_nndistance.nn_distance(pred, label)
     likelihoods = end_points['likelihoods']
-    bits = tf.reduce_sum(tf.log(likelihoods), axis=(1, 2, 3)) / -np.log(2)
+    bits = tf.reduce_sum(tf.log(likelihoods), axis=(1,)) / -np.log(2)
     
     loss = tf.reduce_mean(dists_forward+dists_backward)
-    main_loss = 0.5 * tf.reduce_mean(squared_error) + tf.reduce_mean(bits)
-    end_points['pcloss'] = loss
+    main_loss = 0.5 * loss + tf.reduce_mean(bits)
+    end_points['pcloss'] = main_loss
     return loss*100, end_points
 
 
