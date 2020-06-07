@@ -92,7 +92,7 @@ class PartDataset():
         self.classes = dict(zip(self.cat, range(len(self.cat))))  
         self.num_seg_classes = 0
         if not self.classification:
-            for i in range(len(self.datapath)/50):
+            for i in range(len(self.datapath)//50):
                 l = len(np.unique(np.loadtxt(self.datapath[i][-1]).astype(np.uint8)))
                 if l > self.num_seg_classes:
                     self.num_seg_classes = l
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     tic = time.time()
     i = 100
     ps, seg = d[i]
-    print np.max(seg), np.min(seg)
+    print(np.max(seg), np.min(seg))
     print(time.time() - tic)
     print(ps.shape, type(ps), seg.shape,type(seg))
     sys.path.append('utils')
