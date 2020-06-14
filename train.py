@@ -122,7 +122,7 @@ def train():
             if FLAGS.model=="model_mk":
                 aux_optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
                 aux_step = aux_optimizer.minimize(end_points["entropy_bottleneck"].losses[0])
-            step = tf.group(train_op, aux_step, end_points["entropy_bottleneck"].updates[0])
+            step_op = tf.group(train_op, aux_step, end_points["entropy_bottleneck"].updates[0])
             
             # Add ops to save and restore all the variables.
             saver = tf.train.Saver()
@@ -138,18 +138,18 @@ def train():
         merged = tf.summary.merge_all()
         train_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'train'), sess.graph)
         test_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'test'), sess.graph)
-
+        
         # Init variables
         init = tf.global_variables_initializer()
-        sess.run(init)
-        #sess.run(init, {is_training_pl: True})
+        # sess.run(init)
+        sess.run(init, {is_training_pl: True})
 
         ops = {'pointclouds_pl': pointclouds_pl,
                'labels_pl': labels_pl,
                'is_training_pl': is_training_pl,
                'pred': pred,
                'loss': loss,
-               'train_op': train_op,
+               'train_op': step_op,
                'merged': merged,
                'step': batch,
                'end_points': end_points}
@@ -206,8 +206,8 @@ def train_one_epoch(sess, ops, train_writer):
         feed_dict = {ops['pointclouds_pl']: aug_data,
                      ops['labels_pl']: aug_data,
                      ops['is_training_pl']: is_training,}
-        summary, step, _, loss_val, pcloss_val, pred_val = sess.run([ops['merged'], ops['step'],
-            ops['train_op'], ops['loss'], ops['end_points']['pcloss'], ops['pred']], feed_dict=feed_dict)
+        summary, step, _, loss_val, pcloss_val, pred_val, ep = sess.run([ops['merged'], ops['step'],
+            ops['train_op'], ops['loss'], ops['end_points']['pcloss'], ops['pred'], ops['end_points']['bits']], feed_dict=feed_dict)
         train_writer.add_summary(summary, step)
         loss_sum += loss_val
         pcloss_sum += pcloss_val
@@ -216,6 +216,8 @@ def train_one_epoch(sess, ops, train_writer):
             log_string(' -- %03d / %03d --' % (batch_idx+1, num_batches))
             log_string('mean loss: %f' % (loss_sum / 10))
             log_string('mean pc loss: %f' % (pcloss_sum / 10))
+            print('bpp',ep)
+
             total_correct = 0
             total_seen = 0
             loss_sum = 0

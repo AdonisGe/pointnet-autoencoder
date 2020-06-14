@@ -34,52 +34,57 @@ def get_model(point_cloud, is_training, bn_decay=None):
         net: TF tensor BxNx3, reconstructed point clouds
         end_points: dict
     """
-    batch_size = point_cloud.get_shape()[0].value
-    num_point = point_cloud.get_shape()[1].value
-    point_dim = point_cloud.get_shape()[2].value
-    end_points = {}
+    with tf.variable_scope() as sc:
+        batch_size = point_cloud.get_shape()[0].value
+        num_point = point_cloud.get_shape()[1].value
+        point_dim = point_cloud.get_shape()[2].value
+        end_points = {}
 
-    input_image = tf.expand_dims(point_cloud, -1)
+        input_image = tf.expand_dims(point_cloud, -1)
 
-    # Encoder
-    net = tf_util.conv2d(input_image, 64, [1,point_dim],
+        # Encoder
+        net = tf_util.conv2d(input_image, 64, [1,point_dim],
                          padding='VALID', stride=[1,1],
                          bn=True, is_training=is_training,
                          scope='conv1', bn_decay=bn_decay)
-    net = tf_util.conv2d(net, 64, [1,1],
+        net = tf_util.conv2d(net, 64, [1,1],
                          padding='VALID', stride=[1,1],
                          bn=True, is_training=is_training,
                          scope='conv2', bn_decay=bn_decay)
-    point_feat = tf_util.conv2d(net, 64, [1,1],
+        point_feat = tf_util.conv2d(net, 64, [1,1],
                          padding='VALID', stride=[1,1],
                          bn=True, is_training=is_training,
                          scope='conv3', bn_decay=bn_decay)
-    net = tf_util.conv2d(point_feat, 128, [1,1],
+        net = tf_util.conv2d(point_feat, 128, [1,1],
                          padding='VALID', stride=[1,1],
                          bn=True, is_training=is_training,
                          scope='conv4', bn_decay=bn_decay)
-    net = tf_util.conv2d(net, 1024, [1,1],
+        net = tf_util.conv2d(net, 1024, [1,1],
                          padding='VALID', stride=[1,1],
                          bn=True, is_training=is_training,
                          scope='conv5', bn_decay=bn_decay)
-    global_feat = tf_util.max_pool2d(net, [num_point,1],
+        global_feat = tf_util.max_pool2d(net, [num_point,1],
                                      padding='VALID', scope='maxpool')
 
-    net = tf.reshape(global_feat, [batch_size, -1])
-    end_points['embedding'] = net
-
-    # Entropy bottleneck
-    entropy_bottleneck = tfc.EntropyBottleneck()
-    end_points['entropy_bottleneck'] = entropy_bottleneck
-
-    net, likelihoods = entropy_bottleneck(net, training=True)
-    end_points['likelihoods'] = likelihoods
-
-    # FC Decoder
-    net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training, scope='fc1', bn_decay=bn_decay)
-    net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training, scope='fc2', bn_decay=bn_decay)
-    net = tf_util.fully_connected(net, num_point*3, activation_fn=None, scope='fc3')
-    net = tf.reshape(net, (batch_size, num_point, 3))
+        net = tf.reshape(global_feat, [batch_size, -1])
+        end_points['embedding'] = net
+        net = tf.expand_dims(net, -1)
+        # Entropy bottleneck
+        entropy_bottleneck = tfc.EntropyBottleneck()
+        end_points['entropy_bottleneck'] = entropy_bottleneck
+        
+        # entropy_bottleneck(net, training=is_training)
+        with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+            net, likelihoods = tf.cond(is_training, lambda:entropy_bottleneck(net, training=True), lambda:entropy_bottleneck(net, training=False))
+        
+        bits = tf.reduce_sum(tf.log(likelihoods), axis=(1,2)) / -np.log(2) / num_point
+        end_points['bits'] = tf.reduce_mean(bits)
+        net = tf.reshape(net, [batch_size, -1])
+        # FC Decoder
+        net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training, scope='fc1', bn_decay=bn_decay)
+        net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training, scope='fc2', bn_decay=bn_decay)
+        net = tf_util.fully_connected(net, num_point*3, activation_fn=None, scope='fc3')
+        net = tf.reshape(net, (batch_size, num_point, 3))
 
     return net, end_points
 
@@ -87,13 +92,11 @@ def get_loss(pred, label, end_points):
     """ pred: BxNx3,
         label: BxNx3, """
     dists_forward, _, dists_backward, _ = tf_nndistance.nn_distance(pred, label)
-    likelihoods = end_points['likelihoods']
-    bits = tf.reduce_sum(tf.log(likelihoods), axis=(1,)) / -np.log(2)
     
     loss = tf.reduce_mean(dists_forward+dists_backward)
-    main_loss = 0.5 * loss + tf.reduce_mean(bits)
+    main_loss = 0.5 * loss + end_points['bits']
     end_points['pcloss'] = main_loss
-    return loss*100, end_points
+    return main_loss, end_points
 
 
 if __name__=='__main__':
