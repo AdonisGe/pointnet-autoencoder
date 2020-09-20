@@ -5,6 +5,7 @@ Author: Charles R. Qi
 Date: May 2018
 """
 import tensorflow as tf
+import tensorflow_compression as tfc
 import numpy as np
 import math
 import sys
@@ -67,7 +68,7 @@ def get_model(point_cloud, is_training, bn_decay=None):
     end_points['embedding'] = net
 
     # Entropy bottleneck
-    entropy_bottleneck = EntropyBottleneck()
+    entropy_bottleneck = tfc.EntropyBottleneck()
     end_points['entropy_bottleneck'] = entropy_bottleneck
 
     net, likelihoods = entropy_bottleneck(net, training=is_training)
