@@ -24,7 +24,7 @@ def placeholder_inputs(batch_size, num_point):
     return pointclouds_pl, labels_pl
 
 
-def get_model(point_cloud, is_training, bn_decay=None):
+def encoder(point_cloud, is_training, bn_decay=None):
     """ Autoencoder for point clouds.
     Input:
         point_cloud: TF tensor BxNx3
@@ -38,7 +38,7 @@ def get_model(point_cloud, is_training, bn_decay=None):
         batch_size = point_cloud.get_shape()[0].value
         num_point = point_cloud.get_shape()[1].value
         point_dim = point_cloud.get_shape()[2].value
-        end_points = {}
+        end_points = {"num_point":num_point,"batch_size":batch_size}
 
         input_image = tf.expand_dims(point_cloud, -1)
 
@@ -67,34 +67,28 @@ def get_model(point_cloud, is_training, bn_decay=None):
                                      padding='VALID', scope='maxpool')
 
         net = tf.reshape(global_feat, [batch_size, -1])
-        end_points['embedding'] = net
-        net = tf.expand_dims(net, -1)
-        # Entropy bottleneck
-        entropy_bottleneck = tfc.EntropyBottleneck()
-        end_points['entropy_bottleneck'] = entropy_bottleneck
-        
-        # entropy_bottleneck(net, training=is_training)
-        with tf.variable_scope(tf.get_variable_scope(), reuse=False):
-            net, likelihoods = tf.cond(is_training, lambda:entropy_bottleneck(net, training=True), lambda:entropy_bottleneck(net, training=False))
-        
-        bits = tf.reduce_sum(tf.log(likelihoods), axis=(1,2)) / -np.log(2) / num_point
-        end_points['bits'] = tf.reduce_mean(bits)
-        net = tf.reshape(net, [batch_size, -1])
-        # FC Decoder
+       
+    return net, end_points
+
+def decoder(net, is_training, end_points,bn_decay=None):
+	num_point = end_points["num_point"]
+	batch_size = end_points["batch_size"]
+    with tf.variable_scope() as sc:
         net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training, scope='fc1', bn_decay=bn_decay)
         net = tf_util.fully_connected(net, 1024, bn=True, is_training=is_training, scope='fc2', bn_decay=bn_decay)
         net = tf_util.fully_connected(net, num_point*3, activation_fn=None, scope='fc3')
         net = tf.reshape(net, (batch_size, num_point, 3))
-
     return net, end_points
-
+        
 def get_loss(pred, label, end_points):
     """ pred: BxNx3,
         label: BxNx3, """
     dists_forward, _, dists_backward, _ = tf_nndistance.nn_distance(pred, label)
+    bits = tf.reduce_sum(tf.log(likelihoods), axis=(1,2)) / -np.log(2) / end_points["num_point"]
+    bits = tf.reduce_mean(bits)
     
     loss = tf.reduce_mean(dists_forward+dists_backward)
-    main_loss = 0.5 * loss + end_points['bits']
+    main_loss = 0.5 * loss + bits
     end_points['pcloss'] = main_loss
     return main_loss, end_points
 
